@@ -1,5 +1,6 @@
 require 'fuzzystringmatch'
 require 'json'
+require 'open-uri'
 require 'ostruct'
 
 class Request
@@ -151,7 +152,7 @@ class Result < Struct.new(:route, :direction, :stop)
 end
 
 class StaticData
-  attr_reader :a, :routes, :route_ids, :directions, :stops, :stop_ids
+  attr_reader :routes, :route_ids, :directions, :stops, :stop_ids
 
   def initialize(routes_json: 'static_data/routes.json',
                  stops_json: 'static_data/stops.json')
@@ -177,6 +178,23 @@ class StaticData
     @stops.select do |stop_id, stop|
       matcher.getDistance(stop.stop_desc, search_str) >= threshold
     end.keys
+  end
+end
+
+class DynamicData
+  def self.trip_update(route_id, direction, stop_id)
+    req = "https://ripta-api.herokuapp.com/api/tripupdates/route/#{route_id}/#{direction_id(direction)}"
+    res = JSON.parse(open(req).read)
+    stop_update = res["entity"].first["trip_update"]["stop_time_update"].find { |st| st["stop_id"] == stop_id.to_s }
+    if stop_update["arrival"]
+      Time.at(stop_update["arrival"]["time"])
+    else
+      Time.as(stop_update["departure"]["time"])
+    end
+  end
+
+  def self.direction_id(direction)
+    (["Inbound", "North", "East"].include? direction) ? 1 : 0
   end
 end
 

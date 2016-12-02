@@ -30,6 +30,7 @@ end
 res = refine_request_loop(req)
 
 puts "you picked route=#{res.route.route_id}, direction=#{res.direction}, stop=#{res.stop.stop_id}"
+puts DynamicData.trip_update(res.route.route_id, res.direction, res.stop.stop_id)
 
 
 
