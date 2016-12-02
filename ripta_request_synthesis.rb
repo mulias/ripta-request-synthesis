@@ -119,12 +119,22 @@ class Request
   def results
     @route_ids.map do |route_id|
       route = @data.routes[route_id]
-      dir_0_results = (route.direction_0_stop_ids & @stop_ids).map do |stop_id|
-        Result.new(route, route.direction_0, @data.stops[stop_id])
-      end
-      dir_1_results = (route.direction_1_stop_ids & @stop_ids).map do |stop_id|
-        Result.new(route, route.direction_1, @data.stops[stop_id])
-      end
+      dir_0_results =
+        if @directions.include? route.direction_0
+          (route.direction_0_stop_ids & @stop_ids).map do |stop_id|
+            Result.new(route, route.direction_0, @data.stops[stop_id])
+          end
+        else
+          []
+        end
+      dir_1_results =
+        if @directions.include? route.direction_1
+          (route.direction_1_stop_ids & @stop_ids).map do |stop_id|
+            Result.new(route, route.direction_1, @data.stops[stop_id])
+          end
+        else
+          []
+        end
       [dir_0_results, dir_1_results]
     end.flatten
   end
