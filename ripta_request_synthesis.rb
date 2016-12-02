@@ -5,11 +5,14 @@ require 'ostruct'
 class Request
   attr_reader :route_ids, :directions, :stop_ids
 
-  def initialize(static_data, route_ids, directions, stop_ids)
+  def initialize(route_ids, directions, stop_ids, static_data)
     @route_ids = route_ids
     @directions = directions
     @stop_ids = stop_ids
     @data = static_data
+    if @route_ids.empty? || @directions.empty? || @stop_ids.empty?
+      raise "not a valid request"
+    end
   end
 
   def self.new_stop_countdown(static_data: StaticData.new,
@@ -17,17 +20,17 @@ class Request
     route_ids = route ? [route] : static_data.route_ids
     directions = direction ? [direction] : static_data.directions
     stop_ids = static_data.fuzzy_match_stops(stop_query, threshold: 0.7)
-    new(static_data, route_ids, directions, stop_ids)
-  end
-
-  def valid?
-    !(@route_ids.empty? || @directions.empty? || @stop_ids.empty?)
+    new(route_ids, directions, stop_ids, static_data)
   end
 
   def refine_routes_with_stops
-    # add routes for the stop to route_ids
-    # new_routes = @stops.each
-    # Request.new(new_routes, @directions, @stops)
+    # restrict routes with stop routes
+    first_stop_routes = @data.stops[@stop_ids.first].route_ids
+    all_stop_routes = @stop_ids.reduce(first_stop_routes) do |acc, stop_id|
+      acc | @data.stops[stop_id].route_ids
+    end
+    new_routes = @route_ids & all_stop_routes
+    Request.new(new_routes, @directions, @stop_ids, @data)
   end
 
   def refine_routes_with_directions
@@ -41,7 +44,12 @@ class Request
 
   def refine_directions_with_stops
     # restrict directions with stop_directions
-    # Request.new(@route_ids, new_directions, @stops)
+    first_stop_dirs = @data.stops[@stop_ids.first].directions
+    all_stop_dirs = @stop_ids.reduce(first_stop_dirs) do |acc, stop_id|
+      acc | @data.stops[stop_id].directions
+    end
+    new_directions = @directions & all_stop_dirs
+    Request.new(@route_ids, new_directions, @stop_ids, @data)
   end
 
   def refine_stops_with_routes
@@ -52,6 +60,25 @@ class Request
   def refine_stops_with_directions
     # restrict stop_ids by stop direction
     # Request.new(@route_ids, @directions, new_stops)
+  end
+
+  def results
+    @route_ids.map do |route_id|
+      route = @data.routes[route_id]
+      dir_0_results = (route.direction_0_stop_ids & @stop_ids).map do |stop_id|
+        Result.new(route, route.direction_0, @data.stops[stop_id])
+      end
+      dir_1_results = (route.direction_1_stop_ids & @stop_ids).map do |stop_id|
+        Result.new(route, route.direction_1, @data.stops[stop_id])
+      end
+      [dir_0_results, dir_1_results]
+    end.flatten
+  end
+end
+
+class Result < Struct.new(:route, :direction, :stop)
+  def to_s
+    "#{route.route_id} #{direction} to #{stop.stop_desc}"
   end
 end
 
@@ -81,7 +108,7 @@ class StaticData
     matcher = FuzzyStringMatch::JaroWinkler.create(:native)
     @stops.select do |stop_id, stop|
       matcher.getDistance(stop.stop_desc, search_str) >= threshold
-    end.map { |stop_id, _| stop_id }
+    end.keys
   end
 end
 
