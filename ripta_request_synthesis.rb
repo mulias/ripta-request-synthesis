@@ -223,8 +223,8 @@ class TUI
 
   def self.ask_stop_list(req)
     n = ask_list("Which stop are you looking for?", req.stop_descriptions)
-    route = req.route_ids[n]
-    req.select_route(route)
+    stop = req.stop_ids[n]
+    req.select_stop(stop)
   end
 
   def self.ask_result_list(results)
