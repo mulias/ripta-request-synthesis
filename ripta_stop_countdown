@@ -1,0 +1,36 @@
+#!/usr/bin/env ruby
+
+require_relative 'ripta_request_synthesis.rb'
+
+stop_query, route, direction = TUI.ask_stop_countdown
+
+req = Request.
+  new_stop_countdown(stop_query, route: route, direction: direction).
+  refine_all
+
+def refine_request_loop(req)
+  results = req.results
+  puts "Found #{results.count} results"
+  case
+  when results.count == 1
+    return results.first
+  when results.count <= 6
+    return TUI.ask_result_list(results)
+  when req.route_ids.count > 1 && req.route_ids.count <= 6
+    refine_request_loop(TUI.ask_route_list(req).refine_all)
+  when req.route_ids.count > 1
+    refine_request_loop(TUI.ask_route_number(req).refine_all)
+  when req.directions.count > 1
+    refine_request_loop(TUI.ask_direction_list(req).refine_all)
+  when req.stop_ids.count > 1
+    refine_request_loop(TUI.ask_stop_list(req).refine_all)
+  end
+end
+
+res = refine_request_loop(req)
+
+puts "you picked route=#{res.route.route_id}, direction=#{res.direction}, stop=#{res.stop.stop_id}"
+
+
+
+
