@@ -24,7 +24,7 @@ class Request
                               static_data: StaticData.new)
     route_ids = route ? [route] : static_data.route_ids
     directions = direction ? [direction] : static_data.directions
-    stop_ids = static_data.fuzzy_match_stops(stop_query, threshold: 0.7)
+    stop_ids = static_data.fuzzy_match_stops(stop_query, threshold: 0.9)
     new(route_ids, directions, stop_ids, static_data)
   end
 
@@ -151,7 +151,7 @@ class Result < Struct.new(:route, :direction, :stop)
 end
 
 class StaticData
-  attr_reader :a, :routes, :route_ids, :directions, :stops, :stop_ids
+  attr_reader :routes, :route_ids, :directions, :stops, :stop_ids
 
   def initialize(routes_json: 'static_data/routes.json',
                  stops_json: 'static_data/stops.json')
@@ -160,6 +160,7 @@ class StaticData
     @directions = ["Inbound", "Outbound", "North", "South", "East", "West"]
     @stops = parse_stops(stops_json)
     @stop_ids = @stops.keys
+    @matcher = FuzzyStringMatch::JaroWinkler.create(:native)
   end
 
   def parse_routes(routes_json)
@@ -172,27 +173,43 @@ class StaticData
       reduce({}) { |acc, stop| acc.update(stop.stop_id => stop) }
   end
 
-  def fuzzy_match_stops(search_str, threshold: 0.7)
-    matcher = FuzzyStringMatch::JaroWinkler.create(:pure)
+  def fuzzy_match_stops(search_str, threshold: 0.9)
     @stops.select do |stop_id, stop|
-      matcher.getDistance(stop.stop_desc, search_str) >= threshold
+      fuzzy_string_distance(stop.stop_name, search_str) >= threshold
     end.keys
+  end
+
+  def union_partition(a, b)
+    [(a - b), (a & b), (b - a)]
+  end
+
+  def fuzzy_string_distance(a_str, b_str)
+    a_tokens = a_str.downcase.gsub(/[^a-z0-9\s]/i, ' ').split.sort
+    b_tokens = b_str.downcase.gsub(/[^a-z0-9\s]/i, ' ').split.sort
+    a_only, union, b_only = union_partition(a_tokens, b_tokens)
+    union_str = union.join(" ")
+    new_a_str = union_str + " " + a_only.join(" ")
+    new_b_str = union_str + " " + b_only.join(" ")
+    [ @matcher.getDistance(union_str, new_a_str),
+      @matcher.getDistance(union_str, new_b_str),
+      @matcher.getDistance(new_a_str, new_b_str)
+    ].max
   end
 end
 
 class TUI
   def self.ask(question)
-    print "#{question} "
+    print question
     gets.chomp
   end
 
   def self.ask_stop_countdown
-    stop_query = ask("Stop location (Required):")
+    stop_query = ask("Stop location (Required): ")
 
-    get_route = ask("Bus Route (Enter to skip):")
+    get_route = ask("Bus Route (Enter to skip): ")
     route = get_route.empty? ? nil : get_route.to_i
 
-    get_direction = ask("Bus Direction (Enter to skip):")
+    get_direction = ask("Bus Direction (Enter to skip): ")
     direction = get_direction.empty? ? nil : get_direction
 
     return stop_query, route, direction
@@ -200,7 +217,8 @@ class TUI
 
   def self.ask_list(question, entries_list)
     puts question
-    entries_list.each.with_index { |entry, i| puts "\t#{i+1}.\t#{entry}" }
+    entries_list.each.with_index { |entry, i| puts "#{i+1}. #{entry}" }
+    print "> "
     gets.chomp.to_i - 1
   end
 
@@ -211,7 +229,9 @@ class TUI
   end
 
   def self.ask_route_number(req)
-    route_str = ask("Which bus route are you looking for?")
+    question = "Which bus route are you looking for?\n" +
+      "Valid routes: #{req.route_ids.join(", ")}\n> "
+    route_str = ask(question)
     req.select_route(route_str.to_i)
   end
 
